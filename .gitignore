@@ -1,4 +1,2 @@
-.DS_Store
-Thumbs.db
 *.xlsx
-*.xls
+.DS_Store
