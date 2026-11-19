@@ -1468,10 +1468,10 @@ VIEWS.sb={html(){
 /* purchases */
 function brandTargetYear(name){const b=D.brandIdx[String(name).toLowerCase()];if(b==null)return null;let t=0;for(const r of D.t){if(r[2]===b&&D.my[r[0]].y===S.y)t+=r[3];}return t;}
 function purRows(){
-  const out=D.sups.map((n,i)=>({i,name:n,q:0,b:0,tq:0,ty:0,tm:0,rb:null,type:'PO',fullQ:0,mq:Array(12).fill(0),mt:Array(12).fill(0)}));
+  const out=D.sups.map((n,i)=>({i,name:n,q:0,b:0,tq:0,ty:0,tm:0,rb:null,type:'PO',fullQ:0,mq:Array(12).fill(0),mb:Array(12).fill(0),mt:Array(12).fill(0)}));
   for(const r of D.pu){const o=out[r[1]];const y=D.my[r[0]].y,mo=D.my[r[0]].m; if(y!==S.y)continue;
     o.type=r[4]||o.type; if(r[5])o.ty=r[5]; if(r[6])o.tm=r[6]; if(r[7]!=null)o.rb=r[7];
-    o.fullQ+=r[3]||0; o.mq[mo]+=r[3]||0;
+    o.fullQ+=r[3]||0; o.mq[mo]+=r[3]||0; if(r[0]<=Math.max(D.lastPur,0))o.mb[mo]+=r[2]||0;
     if(CUR[r[0]]&&r[0]<=Math.max(D.lastPur,0)){o.q+=r[3]||0;o.b+=r[2]||0;}}
   const lastM=D.my[Math.max(D.lastPur,0)].y===S.y?D.my[D.lastPur].m:11;
   for(const o of out){
@@ -1489,22 +1489,36 @@ const isFastSup=r=>r.type==='Fast'||/wyz/i.test(r.name);
    Q  = quarterly cut-off: each quarter stands alone (Michelin: + annual total; Superstone: quarter only)
    H  = half-year cut-off: Jan–Jun / Jul–Dec (Goodyear, Yokohama)
    MQ = monthly 1,500 and quarterly 4,500, no annual target (Deestone) */
-const BUY_RULE={michelin:'Q',superstone:'Q',goodyear:'H',yokohama:'H',deestone:'MQ'};
-const BUY_ANNUAL={superstone:false,deestone:false}; // brands whose target has no annual total
+const BUY_RULE={michelin:'Q',superstone:'Q',goodyear:'H',yokohama:'H',deestone:'MQ',westlake:'MQ'};
+const BUY_ANNUAL={superstone:false,deestone:false,westlake:false}; // brands whose target has no annual total
+/* brands whose targets / rebate are set here rather than taken from the workbook (Taito, 19 Nov 2026):
+   Westlake — 700 tyres a month earns 5% on that month, 2,100 a quarter earns another 3% on that quarter (8% in all) */
+const BUY_CFG={westlake:{mt:700,qt:2100,rbM:.05,rbQ:.03},
+  michelin:{rbQ:.06,rbY:.02}}; // Michelin — 4,125 a quarter earns 6% on that quarter, 16,500 for the year earns another 2% on the year (8% in all)
 const RULE_LBL={Y:'รายปี (สะสม)',Q:'รายไตรมาส',H:'ครึ่งปี',MQ:'รายเดือน + ไตรมาส'};
 const RULE_HINT={Y:'สะสมยอดซื้อทั้งปี เทียบเป้าทั้งปี',Q:'ตัดยอดทุกไตรมาส ยอดไตรมาสก่อนนำมารวมไม่ได้',H:'ตัดยอดทุก 6 เดือน (ม.ค.–มิ.ย. / ก.ค.–ธ.ค.)',MQ:'เป้ารายเดือนและรายไตรมาส ไม่มีเป้ารายปี'};
 function buyPeriods(rule){if(rule==='Q'||rule==='MQ')return [[0,2,'Q1'],[3,5,'Q2'],[6,8,'Q3'],[9,11,'Q4']];if(rule==='H')return [[0,5,'H1'],[6,11,'H2']];return [[0,11,'ทั้งปี']];}
 function buyStatus(o,lastM){
   const key=String(o.name).toLowerCase(), rule=BUY_RULE[key]||'Y';
+  const cfg=BUY_CFG[key]; if(cfg&&cfg.mt){o.tm=cfg.mt;o.mt=o.mt.map((v,m)=>m>=o.start?cfg.mt:0);o.ty=0;}
   const sum=(a,b,arr)=>{let t=0;for(let m=a;m<=b;m++)t+=arr[m]||0;return t;};
   const per=buyPeriods(rule).map(([a,b,l])=>{const t=sum(a,b,o.mt),upto=Math.min(b,lastM),q=lastM>=a?sum(a,upto,o.mq):0,tExp=lastM>=a?sum(a,upto,o.mt):0;
-    return {a,b,l,t,q,tExp,done:lastM>=b,started:lastM>=a,ach:t?q/t:null};});
+    const bt=lastM>=a?sum(a,upto,o.mb):0;
+    return {a,b,l,t,q,tExp,bt,done:lastM>=b,started:lastM>=a,ach:t?q/t:null};});
   const cur=per.find(p=>lastM>=p.a&&lastM<=p.b)||per[per.length-1];
   const st=!cur.t?'none':cur.q>=cur.t?'done':!cur.tExp?'wait':cur.q>=cur.tExp?'ok':'late';
   let mon=null;
   if(rule==='MQ'){const ms=[];for(let m=0;m<=lastM;m++)if(o.mt[m])ms.push(o.mq[m]>=o.mt[m]);mon={t:o.mt[lastM],q:o.mq[lastM],hit:ms.filter(Boolean).length,n:ms.length,ok:o.mq[lastM]>=o.mt[lastM]};}
   const annual=BUY_ANNUAL[key]!==false&&o.ty>0;
-  return {rule,per,cur,st,mon,annual,rem:Math.max(0,cur.t-cur.q),left:cur.b-lastM};
+  /* Rebate (Taito, 19 Nov 2026): count only purchases to date in rounds that reached their target;
+     a round still running counts once its full target is reached, otherwise it is 'pending' */
+  const rb=o.rb||0; let earned=0,pending=0;
+  if(cfg&&(cfg.rbM!=null||cfg.rbQ!=null||cfg.rbY!=null)){ // rebate split by round: month / quarter (rule periods) / year
+    if(cfg.rbM)for(let m=0;m<=lastM;m++)if(o.mt[m]&&o.mq[m]>=o.mt[m])earned+=o.mb[m]*cfg.rbM;
+    if(cfg.rbQ)for(const p of per){if(!p.started||!p.t)continue;if(p.q>=p.t)earned+=p.bt*cfg.rbQ;else if(!p.done)pending+=p.bt*cfg.rbQ;}
+    if(cfg.rbY&&o.ty){const yb=o.mb.reduce((a,v,m)=>a+(m<=lastM?v:0),0);if(o.fullQ>=o.ty)earned+=yb*cfg.rbY;else pending+=yb*cfg.rbY;}
+  }else for(const p of per){if(!p.started||!p.t)continue;if(p.q>=p.t)earned+=p.bt*rb;else if(!p.done)pending+=p.bt*rb;}
+  return {rule,per,cur,st,mon,annual,cfg,rem:Math.max(0,cur.t-cur.q),left:cur.b-lastM,earned,pending};
 }
 const buyStChip=s=>s==='wait'?'<span class="chip neu">ยังไม่ถึงรอบ</span>':s==='done'?'<span class="chip good">ถึงเป้าแล้ว</span>':s==='ok'?'<span class="chip good">ตามแผน</span>':s==='late'?'<span class="chip bad">ต่ำกว่าแผน</span>':'<span class="muted">–</span>';
 
@@ -1513,10 +1527,10 @@ VIEWS.buy={html(){
   const rows=purRows().filter(r=>(r.q||r.ty||r.fullQ)&&!isFastSup(r));
   const lp=D.my[Math.max(D.lastPur,0)], lastM=lp.y===S.y?lp.m:11;
   for(const r of rows)r.bs=buyStatus(r,lastM);
-  const T=rows.reduce((a,r)=>({q:a.q+r.q,b:a.b+r.b,reb:a.reb+(r.reb||0),ty:a.ty+(r.bs.annual?r.ty:0),fullQ:a.fullQ+(r.bs.annual?r.fullQ:0)}),{q:0,b:0,reb:0,ty:0,fullQ:0});
+  const T=rows.reduce((a,r)=>({q:a.q+r.q,b:a.b+r.b,reb:a.reb+r.bs.earned,pend:a.pend+r.bs.pending,ty:a.ty+(r.bs.annual?r.ty:0),fullQ:a.fullQ+(r.bs.annual?r.fullQ:0)}),{q:0,b:0,reb:0,pend:0,ty:0,fullQ:0});
   T.fy=T.ty?T.fullQ/T.ty:null; T.cpu=T.q?T.b/T.q:null;
   const tracked=rows.filter(r=>r.bs.st!=='none'&&r.bs.st!=='wait'), onT=tracked.filter(r=>r.bs.st!=='late'), late=tracked.filter(r=>r.bs.st==='late');
-  const noAnnual=rows.filter(r=>!r.bs.annual&&r.ty).map(r=>r.name);
+  const noAnnual=rows.filter(r=>!r.bs.annual&&r.bs.per.some(p=>p.t>0)).map(r=>r.name);
   if(S.sup<0||!rows.some(r=>r.i===S.sup))S.sup=(rows.slice().sort((a,b)=>b.q-a.q)[0]||{}).i??0;
   VIEWS.buy._rows=rows; VIEWS.buy._lastM=lastM;
   const curCell=r=>{const c=r.bs.cur;return r.bs.rule==='Y'?`ทั้งปี <span class="tsmall muted">ถึง ${TH[lastM]}</span>`:`${c.l} <span class="tsmall muted">${TH[c.a]}–${TH[c.b]}</span>`;};
@@ -1532,11 +1546,11 @@ VIEWS.buy={html(){
   <div class="kpis">
     <div class="kpi hero"><span class="l">ยี่ห้อที่ซื้อได้ตามแผนในรอบปัจจุบัน</span><span class="v">${onT.length} <small style="font-size:.5em">จาก ${tracked.length} ยี่ห้อ</small></span><div class="meter"><i style="width:${tracked.length?onT.length/tracked.length*100:0}%"></i></div><span class="d">${late.length?'ต่ำกว่าแผน: '+late.map(r=>esc(r.name)).join(', '):'ทุกยี่ห้อเป็นไปตามแผน'}</span></div>
     <div class="kpi"><span class="l">ยอดซื้อ (บาท) ในช่วง</span><span class="v">${fM(T.b)}</span><span class="d">${fN(T.q)} เส้น · ต้นทุนเฉลี่ย ${fN(T.cpu)} บาท/เส้น</span></div>
-    <div class="kpi"><span class="l">ความคืบหน้าเป้าซื้อทั้งปี ${S.y}</span><span class="v">${fP(T.fy,1)}</span><span class="d">${fN(T.fullQ)} จาก ${fN(T.ty)} เส้น${noAnnual.length?` · ไม่รวม ${noAnnual.map(esc).join(', ')} (ไม่มีเป้ารายปี)`:''}</span></div>
-    <div class="kpi"><span class="l">Rebate ประมาณการ</span><span class="v">${fM(T.reb)}</span><span class="d">ยอดซื้อ × อัตรา Rebate (ถ้าถึงเป้าทุกรอบ)</span></div>
+    <div class="kpi"><span class="l">ความคืบหน้าเป้าซื้อทั้งปี ${S.y}</span><span class="v">${fP(T.fy,1)}</span><span class="d">${fN(T.fullQ)} จาก ${fN(T.ty)} เส้น${noAnnual.length?` · นับเฉพาะยี่ห้อที่มีเป้ารายปี (${noAnnual.map(esc).join(', ')} นับเป้ารายเดือน/ไตรมาส ดูในตาราง)`:''}</span></div>
+    <div class="kpi"><span class="l">Rebate ที่ได้แล้ว (ถึง ${TH[lastM]})</span><span class="v">${fM(T.reb)}</span><span class="d">นับเฉพาะรอบที่ถึงเป้าแล้ว${T.pend?` · รออีก ${fM(T.pend)} ถ้ารอบปัจจุบันถึงเป้า`:''}</span></div>
   </div>
   <div class="card"><h3>รายยี่ห้อ / คู่ค้า</h3>
-  <p class="hint">รอบปัจจุบัน = รอบนับเป้าที่เดือนล่าสุด (${TH[lastM]}) อยู่ · แถบ = ซื้อในรอบเทียบเป้ารอบ · ขีดดำ = ควรถึงเท่าไรตามเวลาที่ผ่านไป · รอบที่ไม่ถึงเป้าจะไม่ได้ Rebate ของรอบนั้น</p>
+  <p class="hint">รอบปัจจุบัน = รอบนับเป้าที่เดือนล่าสุด (${TH[lastM]}) อยู่ · แถบ = ซื้อในรอบเทียบเป้ารอบ · ขีดดำ = ควรถึงเท่าไรตามเวลาที่ผ่านไป · Rebate นับเฉพาะยอดซื้อถึง ${TH[lastM]} ของรอบที่ถึงเป้าแล้ว รอบที่ไม่ถึงเป้าไม่นับ</p>
   ${table('buy2',[
     {k:'name',h:'คู่ค้า',f:r=>`${esc(r.name)}${r.start>0&&r.ty?` <span class="muted tsmall">เริ่ม ${TH[r.start]}</span>`:''}`},
     {k:'rule',h:'นับเป้า / รอบปัจจุบัน',v:r=>r.bs.rule,f:r=>`<span class="chip neu" title="${esc(RULE_HINT[r.bs.rule])}">${RULE_LBL[r.bs.rule]}</span><div class="tsmall" style="margin-top:2px">${curCell(r)}</div>`},
@@ -1547,7 +1561,7 @@ VIEWS.buy={html(){
     {k:'past',h:'รอบที่ผ่านมา',v:r=>r.bs.per.filter(p=>p.done&&p.t>0&&p.q<p.t).length,f:pastCell},
     {k:'fy',h:'ทั้งปี',n:1,v:r=>r.bs.annual?r.fullQ/r.ty:-1,f:r=>r.bs.annual?`${fP(r.fullQ/r.ty)}<div class="tsmall muted">${fN(r.fullQ)}/${fN(r.ty)}</div>`:'<span class="tsmall muted">ไม่มีเป้ารายปี</span>',ft:()=>`${fP(T.fy)}<div class="tsmall muted">${fN(T.fullQ)}/${fN(T.ty)}</div>`},
     {k:'b',h:'ยอดซื้อ (บาท)',n:1,f:r=>fM(r.b),ft:t=>fM(t.b)},
-    {k:'reb',h:'Rebate (ประมาณ)',n:1,f:r=>r.reb?`${fM(r.reb)}<div class="tsmall muted">${fP(r.rb,0)}</div>`:'–',ft:t=>fM(t.reb)}
+    {k:'reb',h:'Rebate ที่ได้แล้ว',n:1,v:r=>r.bs.earned,f:r=>!r.rb?'<span class="muted">–</span>':`${r.bs.earned?fM(r.bs.earned):'<span class="muted">0</span>'}<div class="tsmall muted">${r.bs.cfg?[r.bs.cfg.rbM?fP(r.bs.cfg.rbM,0)+' เดือน':'',r.bs.cfg.rbQ?fP(r.bs.cfg.rbQ,0)+' ไตรมาส':'',r.bs.cfg.rbY?fP(r.bs.cfg.rbY,0)+' ปี':''].filter(Boolean).join(' + '):fP(r.rb,0)}${r.bs.pending?` · รอ ${fM(r.bs.pending)}`:''}</div>`,ft:t=>`${fM(t.reb)}${t.pend?`<div class="tsmall muted">รอ ${fM(t.pend)}</div>`:''}`}
   ],rows,{sort:{k:'b',d:-1},foot:T,cls:'fit'})}
   <div class="legend" style="margin-top:10px;flex-wrap:wrap">${used.map(u=>`<span><span class="chip neu">${RULE_LBL[u]}</span> ${RULE_HINT[u]}: ${rows.filter(r=>r.bs.rule===u).map(r=>esc(r.name)).join(', ')}</span>`).join('')}</div></div>
   <div class="card"><div class="tbar"><h3 style="margin-right:auto" id="buyChartT"></h3><label class="fgroup" for="selSup">คู่ค้า <select id="selSup">${rows.map(r=>`<option value="${r.i}" ${r.i===S.sup?'selected':''}>${esc(r.name)}</option>`).join('')}</select></label></div>
