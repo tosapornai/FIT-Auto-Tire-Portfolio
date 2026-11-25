@@ -687,7 +687,7 @@ const shortAm=n=>{if(!n)return '–';const s=n.replace(/^(นาย|นางส
 
 let D=null, ST=null, CUR=[], PRV=[], CURM=[];
 const S={y:0,from:0,to:0,type:'all',am:-1,tab:'overview',sort:{},q:'',store:-1,brand:-1,sup:-1,hmv:'pct',hms:1,rankBy:'ach',flowB:-1,
-  stCover:1.5,stBrand:ALL,mBrand:ALL,zSel:ALL,zView:'rim',zUnit:'q',zYr:'ytd',zGrp:'rim',zRim:'',zQ:'',stYears:'old',stStore:ALL,stQ:'',stZ:'',sbStore:ALL,sbQ:'',exStore:ALL,exBrand:ALL,exZ:'',dsAct:'all',dsBrand:ALL,dsStore:ALL,dsQ:''};
+  stCover:1.5,stBrand:ALL,mBrand:ALL,bsSel:null,bsBy:'pm',bsQ:'',bsAll:false,zSel:ALL,zView:'rim',zUnit:'q',zYr:'ytd',zGrp:'rim',zRim:'',zQ:'',stYears:'old',stStore:ALL,stQ:'',stZ:'',sbStore:ALL,sbQ:'',exStore:ALL,exBrand:ALL,exZ:'',dsAct:'all',dsBrand:ALL,dsStore:ALL,dsQ:''};
 const charts=[];
 let canPublish=null, dlApi=null, artApi=null;
 
@@ -1378,6 +1378,59 @@ function sizeAfter(){
   const q=$('#zQ'); if(q)q.oninput=()=>{S.zQ=q.value;const pos=q.selectionStart;render();const n=$('#zQ');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}};
   document.querySelectorAll('#sizeCard .zrim').forEach(a=>a.onclick=e=>{e.preventDefault();S.zView='size';S.zRim=a.dataset.rim;S.zQ='';render();setTimeout(()=>$('#sizeCard')?.scrollIntoView({block:'start'}),30);});
 }
+/* 07 brand → stores: which stores sell the selected brand / tier well or poorly (Taito, 25 Nov 2026) */
+function brandStoreData(){
+  const sel=S.bsSel, t=TIER_SEL(sel), B=t?ALL:sel;
+  const m=roll((mm,p)=>D.tgtPlants[p]?p:null,{brand:B,tier:t});
+  const all=storeRows();
+  const rows=all.map(r=>{const o=m.get(r.p)||finish(blank());
+    return {p:r.p,code:r.code,name:r.name,amN:r.amN,mon:r.mon,q:o.q,pq:o.pq,s:o.s,t:o.t,yoy:o.yoy,ach:o.t?o.q/o.t:null,gpp:o.gpp,
+      pm:r.mon?o.q/r.mon:0,sh:r.q?o.q/r.q:0,totQ:r.q};});
+  const T=rows.reduce((a,r)=>({q:a.q+r.q,pq:a.pq+r.pq,s:a.s+r.s,t:a.t+r.t,tot:a.tot+r.totQ,mon:a.mon+r.mon}),{q:0,pq:0,s:0,t:0,tot:0,mon:0});
+  T.sh=T.tot?T.q/T.tot:0; T.pm=rows.length&&T.mon?T.q/T.mon:0; T.yoy=T.pq?T.q/T.pq-1:null; T.ach=T.t?T.q/T.t:null;
+  for(const r of rows)r.shIdx=T.sh?r.sh/T.sh:null;
+  return {rows,T};
+}
+function brandStoreSection(){
+  if(S.bsSel==null){const q={};for(const r of D.f)if(CUR[r[0]])q[r[2]]=(q[r[2]]||0)+r[5];S.bsSel=+Object.keys(q).sort((a,b)=>q[b]-q[a])[0]||ALL;} // default: best-selling brand
+  const {rows,T}=brandStoreData(); VIEWS.brand._bst=rows;
+  const nm=selName(S.bsSel), byShare=S.bsBy==='sh';
+  const key=r=>byShare?r.sh:r.pm;
+  const act=rows.filter(r=>r.mon>0);
+  const top=act.slice().sort((a,b)=>key(b)-key(a)||b.q-a.q).slice(0,10);
+  const bot=act.slice().sort((a,b)=>key(a)-key(b)||a.q-b.q).slice(0,10);
+  const shCell=r=>`${fP(r.sh,1)}${r.shIdx!=null&&T.sh?` <span class="tsmall ${r.shIdx>=1?'up':'dn'}">${r.shIdx>=1?'▲':'▼'}${fP(Math.abs(r.shIdx-1),0)}</span>`:''}`;
+  const achCell=r=>r.t?status(r.ach):'<span class="muted">–</span>';
+  const mini=(list,label,cls)=>`<div><h3 style="font-size:14px" class="${cls}">${label}</h3>${table('bst'+cls,[
+    {k:'i',h:'#',sort:false,f:(r,i)=>`<span class="rk">${i+1}</span>`},
+    {k:'name',h:'สาขา',sort:false,f:r=>`${storeCell(r)}<div class="tsmall muted">${esc(r.amN)}</div>`},
+    {k:'pm',h:'เส้น/เดือน',n:1,sort:false,f:r=>f1(r.pm)},
+    {k:'q',h:'เส้นรวม',n:1,sort:false,f:r=>fN(r.q)},
+    {k:'sh',h:'สัดส่วนในสาขา',n:1,sort:false,f:shCell},
+    {k:'yoy',h:'YoY',n:1,sort:false,f:r=>delta(r.yoy)},
+    {k:'ach',h:'% เป้า',n:1,sort:false,f:achCell}],list,{nosort:true,cls:'fit'})}</div>`;
+  let full=rows; const q=(S.bsQ||'').trim().toLowerCase(); if(q)full=full.filter(r=>(r.name+' '+r.code+' '+r.amN).toLowerCase().includes(q));
+  return `<div class="card" id="bstCard"><div class="tbar"><h3 style="margin-right:auto">สาขาขายดี / ขายน้อย รายยี่ห้อ${S.bsSel!==ALL?' · '+esc(nm):''}</h3></div>
+  <div class="rpctl bstctl"><label for="bsSel" class="tsmall muted" style="font-weight:600">ยี่ห้อ / Tier</label><select id="bsSel" aria-label="เลือกยี่ห้อหรือ Tier">${selOptions(S.bsSel)}</select>
+    <div class="seg" id="bsBy"><button type="button" data-v="pm" aria-pressed="${!byShare}">จัดอันดับตามเส้น/เดือน</button><button type="button" data-v="sh" aria-pressed="${byShare}">ตามสัดส่วนในสาขา</button></div></div>
+  <p class="hint" style="margin:4px 0 10px">${esc(periodLabel())} · เส้น/เดือน = ยอดขาย ${esc(nm)} ÷ จำนวนเดือนที่สาขาเปิดขาย · สัดส่วนในสาขา = ยอด ${esc(nm)} เทียบยอดยางทั้งหมดของสาขา (เฉลี่ยทุกสาขา ${fP(T.sh,1)} · ▲▼ = สูง/ต่ำกว่าค่าเฉลี่ยกี่ %)</p>
+  <div class="grid g2">${mini(top,'10 สาขาขายดี','up')}${mini(bot,'10 สาขาขายน้อย','dn')}</div>
+  <details style="margin-top:12px" ${S.bsAll?'open':''} id="bsAllD"><summary style="cursor:pointer;font-weight:600">ดูทุกสาขา (${rows.length})</summary>
+    <div class="tbar" style="margin-top:8px"><input type="search" id="bsQ" placeholder="ค้นหาสาขา / Plant / AM" value="${esc(S.bsQ||'')}" aria-label="ค้นหาสาขา"></div>
+    ${table('bstall',[
+      {k:'name',h:'สาขา',f:r=>storeCell(r)},{k:'amN',h:'AM'},
+      {k:'pm',h:'เส้น/เดือน',n:1,f:r=>f1(r.pm),ft:t=>f1(t.pm)},{k:'q',h:`เส้น ${S.y}`,n:1,f:r=>fN(r.q),ft:t=>fN(t.q)},{k:'pq',h:`เส้น ${S.y-1}`,n:1,f:r=>fN(r.pq),ft:t=>fN(t.pq)},
+      {k:'yoy',h:'YoY',n:1,f:r=>delta(r.yoy),ft:t=>delta(t.yoy)},{k:'sh',h:'สัดส่วนในสาขา',n:1,f:shCell,ft:t=>fP(t.sh,1)},
+      {k:'t',h:'เป้า (เส้น)',n:1,f:r=>r.t?fN(r.t):'–',ft:t=>fN(t.t)},{k:'ach',h:'% เป้า',n:1,f:achCell,ft:t=>t.t?status(t.ach):''},
+      {k:'s',h:'ยอดขาย (บาท)',n:1,f:r=>fM(r.s),ft:t=>fM(t.s)},{k:'gpp',h:'GP%',n:1,f:r=>fP(r.gpp,1)}
+    ],full,{sort:{k:byShare?'sh':'pm',d:-1},foot:T,maxh:560,cls:'fit'})}</details></div>`;
+}
+function brandStoreAfter(){
+  const sel=$('#bsSel'); if(sel)sel.onchange=()=>{S.bsSel=+sel.value;render();};
+  segHandler('bsBy',v=>S.bsBy=v);
+  const d=$('#bsAllD'); if(d)d.ontoggle=()=>{S.bsAll=d.open;};
+  const q=$('#bsQ'); if(q)q.oninput=()=>{S.bsQ=q.value;const pos=q.selectionStart;render();const n=$('#bsQ');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}};
+}
 VIEWS.brand={html(){
   const m=roll((mm,p,b)=>b);
   const tot=one();
@@ -1407,6 +1460,7 @@ VIEWS.brand={html(){
     <div class="legend"><span><i class="sw" style="background:var(--y25)"></i>Actual ${S.y-1}</span><span><i class="sw" style="background:var(--y26)"></i>Actual ${S.y}</span><span><i class="sw line"></i>Target</span></div>
     <div class="chart"><canvas id="cBrand"></canvas></div>
     <p class="hint" style="margin-top:10px">ประเภทรถ ${S.y}: ${[...vt.entries()].sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${esc(D.vts[k])} ${fP(vtot?v/vtot:0)}`).join(' · ')||'–'}</p></div></div>
+  ${brandStoreSection()}
   ${sizeSection()}
   <div class="card"><div class="tbar"><h3 style="margin-right:auto">สินค้าขายดีรายสาขา (ยี่ห้อ · ขนาด · รุ่น)</h3></div>
     <div class="tbar">${picker('exStore',plantItems(stores),S.exStore,'พิมพ์ค้นหาสาขา / Plant',`ทุกสาขา${S.am>=0?' ของ AM นี้':''}`)}
@@ -1422,6 +1476,7 @@ VIEWS.brand={html(){
   const hasT=s.tg.some(x=>x>0);
   chart('cBrand',{type:'bar',data:{labels:CURM.map(m=>TH[m]),datasets:[barDs('Actual '+(S.y-1),s.prv,css('--y25')),barDs('Actual '+S.y,s.cur,css('--y26'))].concat(hasT?[tgtDs('Target',s.tg)]:[])}});
   const sb=$('#selBrand'); if(sb)sb.onchange=()=>{S.brand=+sb.value;render();};
+  brandStoreAfter();
   sizeAfter();
   const eb=$('#exBrand'); if(eb)eb.onchange=()=>{S.exBrand=+eb.value;render();};
   bindPicker('exStore',v=>{S.exStore=v;render();});
