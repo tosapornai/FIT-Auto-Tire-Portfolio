@@ -1172,8 +1172,8 @@ function storeDetail(){
   <div style="margin-top:12px">
     <div class="legend"><span><i class="sw" style="background:var(--y25)"></i>Actual ${S.y-1}</span><span><i class="sw" style="background:var(--y26)"></i>Actual ${S.y}</span><span><i class="sw line"></i>Target</span></div>
     <div class="chart"><canvas id="cStoreM"></canvas></div></div>
-  <div style="margin-top:14px">${table('sd',[{k:'name',h:'ยี่ห้อ',f:x=>`${esc(x.name)} <span class="muted tsmall">T${x.tier}</span>`,sort:false},{k:'t',h:'เป้า',n:1,f:x=>fN(x.t),sort:false},{k:'q',h:'ขาย',n:1,f:x=>fN(x.q),sort:false},
-    {k:'ach',h:'% ถึงเป้า',n:1,f:x=>x.t?status(x.ach):'<span class="muted">–</span>',sort:false},{k:'pq',h:`ขาย ${S.y-1}`,n:1,f:x=>fN(x.pq),sort:false},{k:'s',h:'ยอดขาย (บาท)',n:1,f:x=>fM(x.s),sort:false},
+  <div style="margin-top:14px">${table('sd',[{k:'name',h:'ยี่ห้อ',f:x=>`${esc(x.name)} <span class="muted tsmall">T${x.tier}</span>`,sort:false},{k:'pq',h:`ขาย ${S.y-1} (เส้น)`,n:1,f:x=>fN(x.pq),sort:false},{k:'q',h:`ขาย ${S.y} (เส้น)`,n:1,f:x=>fN(x.q),sort:false},{k:'t',h:`เป้า ${S.y} (เส้น)`,n:1,f:x=>fN(x.t),sort:false},
+    {k:'ach',h:'% ถึงเป้า',n:1,f:x=>x.t?status(x.ach):'<span class="muted">–</span>',sort:false},{k:'yoy',h:'YoY (%)',n:1,f:x=>delta(x.pq?x.q/x.pq-1:null),sort:false},{k:'s',h:'ยอดขาย (บาท)',n:1,f:x=>fM(x.s),sort:false},
     {k:'gpu',h:`GP/เส้น ${S.y}`,n:1,f:x=>fN(x.gpu),sort:false},{k:'gpp',h:`GP% ${S.y}`,n:1,f:x=>fP(x.gpp,1),sort:false}],br,{nosort:true,cls:'fit'})}
   <p class="hint" style="margin-top:8px">${esc(whyText(br))}</p></div></div>`;
 }
